@@ -1,0 +1,67 @@
+# apt-get install automake gcc-multilib texinfo
+# cd TrustedGRUB-1.1.5/stage1/
+# sed -e 's/pkglib_DATA/pkgdata_DATA/' Makefile.am
+# cd TrustedGRUB-1.1.5/stage2/
+# sed -e 's/pkglib_DATA/pkgdata_DATA/' Makefile.am
+
+Create menu.lst
+# cat /boot/grub/menu.lst
+
+default=0
+timeout=5
+title Ubuntu
+	root (hd0,0)
+	kernel /vmlinuz-3.16.0-30-generic root=/dev/mapper/ubuntu--vg-root ro quiet
+	initrd /initrd.img-3.16.0-30-generic
+
+
+# vim /usr/share/initramfs-tools/scripts/local-top/cryptroot
+
+Add at line 251
+
+251	if [ $count -eq 1 ]; then
+		modprobe -q tpm_infineon
+		mknod /dev/tpm c 10 224
+		ifconfig lo 127.0.0.1
+		mkdir /mnt
+		mount /dev/sda1 /mnt
+		mkdir -p /var/lib/tpm
+		cp /mnt/system.data /var/lib/tpm
+		tcsd
+		sleep 3
+		tpm_unsealdata -z -i /mnt/sealed_key | cryptsetup luksOpen "$cryptsource" "$crypttarget" && ask_passphrase=0
+		umount /mnt
+	fi
+
+Replace line
+
+	if [ -z "$cryptkeyscript" ] && [ $ask_passphrase -eq 1 ]; then
+.
+.
+.
+
+Replace line
+
+	if [ ! -e "$NEWROOT" ] && [ $ask_passphrase -eq 1 ]; then
+.
+.
+.
+
+
+
+# vim /usr/sbin/mkinitramfs
+Add at line 296
+
+296	# TPM
+	copy_exec /usr/sbin/tcsd /sbin
+	copy_exec /usr/bin/tpm_unsealdata /sbin
+	copy_exec /etc/passwd	/etc
+	copy_exec /etc/group	/etc
+	copy_exec /etc/hosts	/etc
+	copy_exec /etc/nsswitch.conf /etc
+	copy_exec /lib/x86_64-linux-gnu/libnss_files.so.2 /lib
+	copy_exec /lib/x86_64-linux-gnu/libnss_dns.so.2 /lib
+
+
+Copy system.data to /boot/
+# cp /var/lib/tpm/system.data /boot

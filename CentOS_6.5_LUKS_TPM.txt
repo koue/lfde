@@ -1,0 +1,72 @@
+BIOS -> boot -> legacy only
+BIOS -> security chip enable
+
+### CentOS 6.5 installation
+
+disk partiotion table:
+	
+	/dev/sda1 -> /boot
+	/dev/sda2 -> swap
+	/dev/sda3 -> / (encrypted)
+
+### post install configuration
+
+# yum install tpm-tools trousers
+# /etc/init.d/tcsd start
+# tpm_takeownership -z
+
+	Password: tpmownershippassword
+
+# wget --no-check-certificate https://projects.sirrix.com/svn/trustedgrub/release/TrustedGRUB-1.1.5.tar.gz
+# tar zxvf TrustedGRUB-1.1.5.tar.gz
+# cd TrustedGRUB-1.1.5/
+# yum install automake gcc glibc-devel glibc-devel.i686 libgcc.i686
+# ./build_tgrub.sh
+# cp default /boot/grub/
+# cd TrustedGRUB-1.1.5
+# make install
+# rm /boot/grub/stage*
+# rm /boot/grub/*1_5
+# cp ./stage1/stage1 /boot/grub
+# cp ./stage2/stage2 /boot/grub
+# ./grub/grub --no-floppy
+ 	root (hd0,0)
+	setup (hd0)
+	quit
+# vi /usr/share/dracut/modules.d/90crypt/cryptroot-ask.sh
+
+	after line 104 add following:
+
+	if [ $ask_passphrase -ne 0 ]; then
+		/sbin/modprobe tpm_infineon
+		/bin/mknod -m 644 /dev/urandom c 1 9
+		ifconfig lo 127.0.0.1
+		/usr/sbin/tcsd -f &
+		sleep 3
+		mkdir /mnt
+		mount -t ext4 /dev/sda1 /mnt
+		/usr/bin/tpm_unsealdata -z -i /mnt/sealed_key | cryptsetup luksOpen "$device" "$luksname" && ask_passphrase=0
+		umount /mnt
+	fi
+
+
+# vim /sbin/dracut
+
+	modify line 336 to:
+
+		if ! ( umask 077; cd "$initdir"; find . |cpio -H newc -o --quiet| \
+
+# dracut --add-drivers tpm_infineon -I "/usr/sbin/tcsd /etc/tcsd.conf /usr/bin/tpm_unsealdata /var/lib/tpm/system.data /etc/passwd /etc/group /etc/nsswitch.conf /lib64/libnss_files.so.2 /etc/hosts /lib64/libnss_dns.so.2 /sbin/ifconfig"  luks-2.6.32-431.el6.x86_64.img
+
+# cp luks-2.6.32-431.el6.x86_64.img /boot
+# vi /boot/grub/menu.lst
+	%s/initramfs/luks/
+
+# reboot
+
+# killall tcsd
+# /etc/init.d/tcsd start
+ 
+# echo lukspassword | tpm_sealdata -z -p 4 -p 8 -p 9 -p 12 -p 14 -o /boot/sealed_key
+
+# reboot

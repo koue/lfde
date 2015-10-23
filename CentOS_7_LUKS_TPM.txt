@@ -1,0 +1,135 @@
+Every line starting with '%' is comment.
+Every line starting with '#' is command for execution.
+
+Prerequisites:
+
+* Installation media: CentOS-7-x86_64-Minimal-1503-01.iso
+* BIOS: UEFI turn off because of TrustedGRUB 
+* Auto partitioning with encrypted files
+
+Post installation:
+
+# yum install tpm-tools trousers wget net-tools
+# tcsd
+# tpm_takeownership -z
+# wget --no-check-certificate https://projects.sirrix.com/svn/trustedgrub/release/TrustedGRUB-1.1.5.tar.gz
+# tar zxvf TrustedGRUB-1.1.5.tar.gz
+# cd TrustedGRUB-1.1.5/
+# tar zxvf TrustedGRUB-1.1.5.src.tar.gz
+# cd TrustedGRUB-1.1.5/
+# yum install automake gcc glibc-devel glibc-devel.i686 libgcc.i686 texinfo
+# sed -i 's/pkglib_DATA/pkgdata_DATA/' stage1/Makefile.am
+# sed -i 's/pkglib_DATA/pkgdata_DATA/' stage2/Makefile.am
+# aclocal
+# autoconf
+# automake --add-missing
+# ./configure
+# make 
+# make install
+# cp ./stage1/stage1 /boot/grub
+# cp ./stage2/stage2 /boot/grub
+# ./grub/grub --no-floppy
+ 	root (hd0,0)
+	setup (hd0)
+	quit
+
+%%%
+%
+% 	/boot/grub/menu.lst is missing and needs to be create
+% 	Keep in mind when create it:
+%		* kernel version is possible to be different
+% 		* root is possible to be different
+%		* rd.luks.uuid will be different
+%
+%%% 
+
+# cat /boot/grub/menu.lst
+default=0
+timeout=5
+title CentOS
+        root (hd0,0)
+        kernel /vmlinuz-3.10.0-229.el7.x86_64 root=/dev/mapper/centos-root ro quiet
+        initrd /initramfs-3.10.0-229.el7.x86_64.img
+
+title luks
+        root (hd0,0)
+        kernel /vmlinuz-3.10.0-229.el7.x86_64 root=/dev/mapper/centos-root ro rd.lvm.lv=centos/swap crashkernel=auto rd.lvm.lv=centos/root rd.luks.uuid=luks-4963d5a3-928c-4349-a40a-3ad8a9b109b0 LANG=en_US.UTF-8
+        initrd /luks.img
+
+%%%
+%
+%	Disable systemd in dracut
+%
+%%%
+# sed -i s/#omit_dracutmodules+=\"\"/omit_dracutmodules+=\"systemd\"/ /etc/dracut.conf
+
+%%%
+%
+% 	Add following content on line 54 in file module-setup.sh
+%
+%%%
+# ed /usr/lib/dracut/modules.d/90crypt/module-setup.sh << EOF
+54i
+inst_multiple ifconfig tcsd tpm_unsealdata
+.
+w
+q
+EOF
+
+%%%
+%
+%	Add following content on line 146 in file cryptroot-ask.sh
+%
+%%%
+# ed /usr/lib/dracut/modules.d/90crypt/cryptroot-ask.sh << EOF
+146i
+if [ \$ask_passphrase -ne 0 ]; then
+ifconfig lo 127.0.0.1
+echo "tss:x:59:59:trousers:/dev/null:/sbin/nologin" >> /etc/passwd
+/sbin/tcsd
+sleep 3
+mkdir /mnt
+mount /dev/sda1 /mnt
+/bin/tpm_unsealdata -z -i /mnt/sealed_key | cryptsetup luksOpen "\$device" "\$luksname" && ask_passphrase=0
+umount /mnt
+fi
+.
+w
+q
+EOF
+
+# dracut -I "/var/lib/tpm/system.data /etc/nsswitch.conf /etc/hosts" luks.img
+# cp luks.img /boot/
+
+%%%
+%
+%	Seal LUKS password with BIOS PCR to be able to boot first time with
+%	new initramfs without password
+%
+%%%
+# echo lukspassword | tpm_sealdata -z -p 0 -o /boot/sealed_key
+
+%%%
+%
+%	Don't forget to choose luks from grub menu
+%
+%%%
+# reboot 
+
+%%%
+%
+%	Seal LUKS password with multiple PCRs:
+%	MBR, boot loader, kernel args, kernel, initramfs, modules
+%
+%%% 
+# echo lukspassword | tpm_sealdata -z -p 4 -p 8 -p 9 -p 12 -p 14 -o /boot/sealed_key
+# reboot
+
+%%%
+%
+%	TPM ownership can be taken only once. If you want
+%	to make fresh install on the same machine backup
+%	/var/lib/tpm/system.data otherwise TPM clear will
+%	be needed.
+%
+%%%
