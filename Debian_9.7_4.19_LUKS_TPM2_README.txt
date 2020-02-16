@@ -1,0 +1,45 @@
+Every line starting with '%' is comment.
+Every line starting with '#' is command for execution.
+
+Prerequisites:
+
+* Installation media: debian-9.7.0-amd64-xfce-CD-1.iso
+* Partitioning: Guided - use entire disk and set up encrypted LVM
+* Partitioning scheme: All files in one partition
+
+Post installation:
+
+# chmod +x Debian_9.7_4.19_LUKS_TPM2_setup.sh
+# ./Debian_9.7_4.19_LUKS_TPM2_setup.sh
+
+%%%
+%
+% Add 'keyscript=/usr/local/bin/passphrase-from-tpm' to /etc/crypttab file
+%
+%%%
+# cat /etc/crypttab
+nvme0n1p3_crypt UUID=e680f842-e0bb-449c-930a-6a0f886cc62e none luks,keyscript=/usr/local/bin/passphrase-from-tpm
+
+%%%
+%
+% Install tpm2-tools, install kernel 4.19
+%
+%%%
+# apt-get install tpm2-tools
+# apt-get install linux-image-4.19.0-3-amd64
+# reboot
+
+%%%
+%
+% Type LUKS password during boot, add LUKS password to the TPM chip
+%
+%%%
+# /usr/local/bin/passphrase-tpm-seal [MY_LUKS_PASSWORD]
+
+%%%
+%
+% On the next boot with kernel 4.19 initramfs will fetch the LUKS password from
+% the TPM chip and system will boot automatically.
+%
+%%%
+# reboot
